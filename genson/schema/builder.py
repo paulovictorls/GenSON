@@ -36,6 +36,7 @@ class SchemaBuilder(metaclass=_MetaSchemaBuilder):
     NULL_URI = 'NULL'
     NODE_CLASS = SchemaNode
     STRATEGIES = BASIC_SCHEMA_STRATEGIES
+    SUPPORTED_TYPES = ['json', 'avro', 'spark', 'ddl']
 
     def __init__(self, schema_uri='DEFAULT'):
         """
@@ -83,23 +84,29 @@ class SchemaBuilder(metaclass=_MetaSchemaBuilder):
             del schema['$schema']
         self._root_node.add_schema(schema)
 
-    def add_object(self, obj):
+    def add_object(self, obj, schema_type):
         """
         Modify the schema to accommodate an object.
 
         :param obj: any object or scalar that can be serialized in JSON
         """
-        self._root_node.add_object(obj)
+        self._root_node.add_object(obj, schema_type)
 
-    def to_schema(self):
+    def to_schema(self, schema_type='json', field_name=None):
         """
         Generate a schema based on previous inputs.
 
         :rtype: ``dict``
         """
-        schema = self._base_schema()
-        schema.update(self._root_node.to_schema())
-        return schema
+        if schema_type not in self.SUPPORTED_TYPES:
+            raise ValueError('Not supported schema type.')
+        
+        if schema_type == 'ddl':
+            return self._root_node.to_schema(schema_type, field_name)
+        else:
+            schema = self._base_schema(schema_type)
+            schema.update(self._root_node.to_schema(schema_type, field_name))
+            return schema
 
     def to_json(self, *args, **kwargs):
         """
@@ -132,11 +139,15 @@ class SchemaBuilder(metaclass=_MetaSchemaBuilder):
         return (self._base_schema() == other._base_schema()
                 and self._root_node == other._root_node)
 
-    def _base_schema(self):
-        if self.schema_uri == self.NULL_URI:
+    def _base_schema(self, schema_type):
+        if schema_type != 'json' or self.schema_uri == self.NULL_URI:
             return {}
         else:
             return {'$schema': self.schema_uri or self.DEFAULT_URI}
+
+    def create_schema_from_object(self, obj, schema_type='json'):
+        self.add_object(obj, schema_type)
+        return self.to_schema(schema_type)
 
 
 class Schema(SchemaBuilder):
