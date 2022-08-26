@@ -1,5 +1,7 @@
 from collections import defaultdict
 from re import search
+
+from py_avro_schema import schema
 from .base import SchemaStrategy
 
 
@@ -17,13 +19,14 @@ class Object(SchemaStrategy):
     def match_object(obj):
         return isinstance(obj, dict)
 
-    def __init__(self, node_class):
-        super().__init__(node_class)
+    def __init__(self, node_class, schema_type):
+        super().__init__(node_class, schema_type)
 
         self._properties = defaultdict(node_class)
         self._pattern_properties = defaultdict(node_class)
         self._required = None
         self._include_empty_required = False
+        self.schema_type = schema_type
 
     def add_schema(self, schema):
         super().add_schema(schema)
@@ -58,7 +61,7 @@ class Object(SchemaStrategy):
                 self._pattern_properties[pattern].add_object(subobj)
             else:
                 properties.add(prop)
-                self._properties[prop].add_object(subobj)
+                self._properties[prop].add_object(subobj, self.schema_type)
 
         if self._required is None:
             self._required = properties
@@ -77,8 +80,7 @@ class Object(SchemaStrategy):
         for subschema, item in zip(self._items, items):
             getattr(subschema, func)(item)
 
-    def to_schema(self):
-        schema = super().to_schema()
+    def create_json_schema(self, schema):
         schema['type'] = 'object'
         if self._properties:
             schema['properties'] = self._properties_to_schema(
@@ -90,8 +92,79 @@ class Object(SchemaStrategy):
             schema['required'] = sorted(self._required)
         return schema
 
+    def create_avro_schema(self, schema, field_name):
+        if field_name:
+
+            schema['name'] = field_name
+        schema['type'] = 'record'
+
+        if self._properties:
+            if field_name == None:
+                schema['name'] = "DynamicRecord"
+                schema['namespace'] = "root"
+                schema['fields'] = self._properties_to_schema(
+                    self._properties)
+
+            else:
+                schema['type'] = [{
+                    'type': 'record',
+                    'name': field_name,
+                    'fields': self._properties_to_schema(
+                        self._properties)
+                }, "null"]
+                schema['nullable'] = True
+
+    def create_spark_schema(self, schema, field_name):
+        if field_name:
+            schema['name'] = field_name
+
+        schema['type'] = 'struct'
+        if self._properties:
+            if field_name == None:
+                schema['fields'] = self._properties_to_schema(
+                    self._properties)
+
+            else:
+                schema['type'] = {
+                    'type': 'struct',
+                    'fields': self._properties_to_schema(
+                        self._properties)
+                }
+                schema['nullable'] = True
+                schema['metadata'] = {}
+
+    def create_ddl_schema(self, schema, field_name):
+        aux = self._properties_to_schema(self._properties)
+        fields_schema = ",".join(aux)
+        if field_name:
+            return "%s:struct<%s>" % (field_name, fields_schema)
+        else:
+            return fields_schema
+
+    def to_schema(self, field_name=None):
+        schema = super().to_schema()
+
+        if self.schema_type == 'json':
+            self.create_json_schema(schema)
+        elif self.schema_type == 'avro':
+            self.create_avro_schema(schema, field_name)
+        elif self.schema_type == 'spark':
+            self.create_spark_schema(schema, field_name)
+        elif self.schema_type == 'ddl':
+            schema = self.create_ddl_schema(schema, field_name)
+
+        return schema
+
     def _properties_to_schema(self, properties):
-        schema_properties = {}
+        if self.schema_type == 'json':
+            schema_properties = {}
+        else:
+            schema_properties = []
+
         for prop, schema_node in properties.items():
-            schema_properties[prop] = schema_node.to_schema()
+            if self.schema_type == 'json':
+                schema_properties[prop] = schema_node.to_schema(self.schema_type)
+            else:
+                schema_properties.append(schema_node.to_schema(self.schema_type, prop))
+
         return schema_properties
