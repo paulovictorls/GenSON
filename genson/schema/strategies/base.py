@@ -25,9 +25,10 @@ class SchemaStrategy:
     def match_object(cls, obj):
         raise NotImplementedError("'match_object' not implemented")
 
-    def __init__(self, node_class):
+    def __init__(self, node_class, schema_type):
         self.node_class = node_class
         self._extra_keywords = {}
+        self.schema_type = schema_type
 
     def add_schema(self, schema):
         self._add_extra_keywords(schema)
@@ -72,7 +73,21 @@ class TypedSchemaStrategy(SchemaStrategy):
     def match_object(cls, obj):
         return isinstance(obj, cls.PYTHON_TYPE)
 
-    def to_schema(self):
+    def to_schema(self, field_name):
         schema = super().to_schema()
-        schema['type'] = self.JS_TYPE
+
+        if self.schema_type == 'json':
+            schema['type'] = self.JS_TYPE
+        elif self.schema_type == 'avro':
+            schema['name'] = field_name
+            schema['type'] = ["null", self.JS_TYPE]
+            schema['default'] = None
+        elif self.schema_type == 'spark':
+            schema['name'] = field_name
+            schema['type'] = self.JS_TYPE
+            schema['nullable'] = True
+            schema['metadata'] = {}
+        elif self.schema_type == 'ddl':
+            schema = f'{field_name}:{self.JS_TYPE}'
+
         return schema
