@@ -59,9 +59,18 @@ class Number(SchemaStrategy):
         # cannot use isinstance() because boolean is a subtype of int
         return type(obj) in cls.PYTHON_TYPES
 
-    def __init__(self, node_class):
-        super().__init__(node_class)
-        self._type = 'integer'
+    def __init__(self, node_class, schema_type):
+        super().__init__(node_class, schema_type)
+        self.schema_type = schema_type
+
+        if self.schema_type == 'json':
+            self._type = 'integer'
+        
+        elif self.schema_type == 'ddl':
+            self._type = 'bigint'
+        
+        else:
+            self._type = 'long'
 
     def add_schema(self, schema):
         super().add_schema(schema)
@@ -69,10 +78,32 @@ class Number(SchemaStrategy):
             self._type = 'number'
 
     def add_object(self, obj):
-        if isinstance(obj, float):
-            self._type = 'number'
+        if self.schema_type == 'json':
+            if isinstance(obj, float):
+                self._type = 'number'
+        elif self.schema_type == 'ddl':
+            self._type = 'double'
+        else:
+            self._type = 'double'
 
-    def to_schema(self):
+    def to_schema(self, field_name):
         schema = super().to_schema()
-        schema['type'] = self._type
+
+        if self.schema_type == 'json':
+            schema['type'] = self._type
+
+        elif self.schema_type == 'avro':
+            schema['name'] = field_name
+            schema['type'] = ["null", self._type]
+            schema['default'] = None
+
+        elif self.schema_type == 'spark':
+            schema['name'] = field_name
+            schema['type'] = self._type
+            schema['nullable'] = True
+            schema['metadata'] = {}
+
+        elif self.schema_type == 'ddl':
+            schema = f'{field_name}:{self._type}'
+
         return schema
