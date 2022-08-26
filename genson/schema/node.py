@@ -36,7 +36,7 @@ class SchemaNode:
         # return self for easy method chaining
         return self
 
-    def add_object(self, obj):
+    def add_object(self, obj, schema_type):
         """
         Modify the schema to accommodate an object.
 
@@ -46,21 +46,22 @@ class SchemaNode:
         """
 
         # delegate to SchemaType object
-        active_strategy = self._get_strategy_for_object(obj)
+        active_strategy = self._get_strategy_for_object(obj, schema_type)
         active_strategy.add_object(obj)
 
         # return self for easy method chaining
         return self
 
-    def to_schema(self):
+    def to_schema(self, schema_type, field_name=None):
         """
         Convert the current schema to a `dict`.
         """
         types = set()
         generated_schemas = []
         for active_strategy in self._active_strategies:
-            generated_schema = active_strategy.to_schema()
-            if len(generated_schema) == 1 and 'type' in generated_schema:
+            generated_schema = active_strategy.to_schema(field_name)
+            if len(generated_schema) == 1 and 'type' in generated_schema \
+                    and schema_type == 'json':
                 types.add(generated_schema['type'])
             else:
                 generated_schemas.append(generated_schema)
@@ -104,10 +105,10 @@ class SchemaNode:
     def _get_strategy_for_schema(self, schema):
         return self._get_strategy_for_('schema', schema)
 
-    def _get_strategy_for_object(self, obj):
-        return self._get_strategy_for_('object', obj)
+    def _get_strategy_for_object(self, obj, schema_type):
+        return self._get_strategy_for_('object', obj, schema_type)
 
-    def _get_strategy_for_(self, kind, schema_or_obj):
+    def _get_strategy_for_(self, kind, schema_or_obj, schema_type):
         # check existing types
         for active_strategy in self._active_strategies:
             if getattr(active_strategy, 'match_' + kind)(schema_or_obj):
@@ -116,7 +117,7 @@ class SchemaNode:
         # check all potential types
         for strategy in self.STRATEGIES:
             if getattr(strategy, 'match_' + kind)(schema_or_obj):
-                active_strategy = strategy(self.__class__)
+                active_strategy = strategy(self.__class__, schema_type)
 
                 # incorporate typeless strategy if it exists
                 if self._active_strategies and \
